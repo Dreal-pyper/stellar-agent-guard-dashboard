@@ -46,6 +46,8 @@ import {
 } from "../lib/guard/decodeProvenance.ts";
 import { formatEventTimestamp } from "../lib/guard/time.ts";
 import { decodeUrlState, writeUrlState } from "../lib/guard/urlState.ts";
+import { eventHref, eventLinkTargetFor, writeEventLink } from "../lib/guard/eventLink.ts";
+import { EventDetailPanel } from "./EventDetailPanel.tsx";
 import {
   FEED_GUARD_CAP,
   attributionLabel,
@@ -378,6 +380,11 @@ export function TelemetryFeed() {
           </button>
         </div>
       </div>
+
+      {/* Focus from `?event=…`, above the controls rather than below the table: an
+          operator arriving from a shared link came for that one row, and the feed
+          they land on is empty until someone presses Start watching. */}
+      <EventDetailPanel />
 
       <div style={{ marginTop: 10 }}>
         <DateRangePicker onApply={applyRange} />
@@ -826,6 +833,13 @@ const TelemetryRow = memo(function TelemetryRow({
   // provider — the row is already memoised on its event.
   const provenance = provenanceForEvent(event);
   const iso = event.ledgerClosedAt ?? event.observedAt ?? null;
+  // Derived from the row's own event, so the permalink costs no new prop and the
+  // memoisation above stays exactly as it was. Null for a refusal and for a row the
+  // console could not address, and those rows render no affordance rather than a
+  // link that would fail to re-read (see `eventLinkTargetFor`).
+  const focus = eventLinkTargetFor(event);
+  const href = focus === null ? null : eventHref(focus.guard, focus.raw);
+  const permalink = focus !== null && href !== null ? { locator: focus.raw, href } : null;
   // Both renderings of the same instant: the local wall time with an explicit
   // zone label for at-a-glance reading, and the stable UTC value to quote in a
   // report. The UTC value comes from the parsed instant, so it is unaffected
@@ -850,6 +864,24 @@ const TelemetryRow = memo(function TelemetryRow({
         >
           {summarizeProvenance(provenance)}
         </div>
+        {permalink !== null && (
+          <a
+            className="tiny"
+            href={permalink.href}
+            data-testid="event-permalink"
+            title="Focus this event. Opens a detail re-read from the chain, and puts a link to this exact row in the address bar."
+            onClick={(click) => {
+              // Plain navigation would reload the page and take the feed, the
+              // wallet session and any form draft with it. `replaceState` focuses
+              // the row in place; a modified click (new tab) still navigates.
+              if (click.metaKey || click.ctrlKey || click.shiftKey || click.altKey) return;
+              click.preventDefault();
+              writeEventLink(permalink.locator);
+            }}
+          >
+            link to this row
+          </a>
+        )}
       </td>
       <td data-label="Decision">
         {event.decision ? (
