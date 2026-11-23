@@ -39,6 +39,11 @@ import {
   type VerdictFilter,
 } from "../lib/guard/telemetryExport.ts";
 import { severityFor } from "../lib/guard/feedSeverity.ts";
+import {
+  describeUnknownFields,
+  provenanceForEvent,
+  summarizeProvenance,
+} from "../lib/guard/decodeProvenance.ts";
 import { formatEventTimestamp } from "../lib/guard/time.ts";
 import { decodeUrlState, writeUrlState } from "../lib/guard/urlState.ts";
 import {
@@ -815,6 +820,11 @@ const TelemetryRow = memo(function TelemetryRow({
   guardLabel: string | null;
 }) {
   const severity = severityFor(event);
+  // Per-field provenance for this row: which displayed values are chain bytes,
+  // which are the SDK's decoding, and which are missing. Cheap and pure (see
+  // `decodeProvenance.ts`), so it is computed rather than threaded through the
+  // provider — the row is already memoised on its event.
+  const provenance = provenanceForEvent(event);
   const iso = event.ledgerClosedAt ?? event.observedAt ?? null;
   // Both renderings of the same instant: the local wall time with an explicit
   // zone label for at-a-glance reading, and the stable UTC value to quote in a
@@ -830,11 +840,24 @@ const TelemetryRow = memo(function TelemetryRow({
         <span className="visually-hidden">Severity: {severity}. </span>
         <div>{labelFor(event)}</div>
         <div className="tiny muted mono">{describeGuardEvent(event)}</div>
+        {/* One line, because this is an operations table: the label above is the
+            SDK's interpretation, not a chain value, and the title names the
+            fields that are missing rather than leaving them to render as text. */}
+        <div
+          className="tiny muted"
+          data-testid="event-decode-provenance"
+          title={describeUnknownFields(provenance)}
+        >
+          {summarizeProvenance(provenance)}
+        </div>
       </td>
       <td data-label="Decision">
         {event.decision ? (
           event.decision.result === "blocked" ? (
-            <span className="pill danger">{event.decision.reason ?? "blocked"}</span>
+            // A missing reason is not the reason. The old `?? "blocked"` put a
+            // word shaped like a reason code in the badge, so a refusal with no
+            // decoded reason read as if it had been explained.
+            <span className="pill danger">{event.decision.reason ?? "reason unknown"}</span>
           ) : (
             <span className="pill ok">allowed</span>
           )
@@ -919,6 +942,9 @@ function labelFor(event: GuardEvent): string {
     case "policy_revoked":
       return "Policy revoked";
     default:
-      return event.topic;
+      // There is no decoded label for this topic, so the row shows the symbol
+      // the chain carried — and marks it as the symbol. A bare string in a
+      // column of labels reads like a label the decoder chose.
+      return `${event.topic} (raw topic)`;
   }
 }
