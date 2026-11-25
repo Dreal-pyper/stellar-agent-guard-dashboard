@@ -80,6 +80,8 @@ const TEST_GUARD = {
     cappedLabels: [],
     health: POLL_OFF,
     gaps: [],
+    failures: [],
+    refresh: async () => null,
   },
   startWatching: () => {},
   stopWatching: () => {},
